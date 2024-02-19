@@ -1,0 +1,184 @@
+version: '3.7'
+
+services:
+
+#  ______                     _   _             
+# |  ____|                   | | (_)            
+# | |__  __  _____  ___ _   _| |_ _  ___  _ __  
+# |  __| \ \/ / _ \/ __| | | | __| |/ _ \| '_ \ 
+# | |____ >  <  __/ (__| |_| | |_| | (_) | | | |
+# |______/_/\_\___|\___|\__,_|\__|_|\___/|_| |_|
+#
+
+  nethermind:
+    image: nethermind/nethermind:${NETHERMIND_VERSION:-}
+    restart: unless-stopped
+    init: true
+    networks: [ cluster ]
+    environment:
+      - DOTNET_BUNDLE_EXTRACT_BASE_DIR=/var/lib/nethermind
+    command: >-
+      --config=${NETWORK} 
+      --datadir=/var/lib/nethermind 
+      --JsonRpc.JwtSecretFile=/var/lib/jwtsecret/jwt.hex 
+      --Sync.SnapSync=true 
+      --JsonRpc.Enabled=true 
+      --JsonRpc.Host=0.0.0.0 
+      --JsonRpc.Port=8545 
+      --HealthChecks.Enabled=true 
+      --Metrics.Enabled=true 
+      --Metrics.PushGatewayUrl=http://localhost:9091/metrics
+    volumes:
+      - ${DATA_FOLDER:-./data}/.nethermind:/var/lib/nethermind
+      - ./data:/tmp/ethereum
+
+  besu:
+    image: hyperledger/besu:${BESU_VERSION:-}
+    restart: unless-stopped
+    init: true
+    networks: [ cluster ]
+    environment:
+      - JAVA_OPTS=-Xmx6g
+    command: >-
+      --network=holesky
+      --sync-mode=X_SNAP
+      --data-path=/var/lib/besu
+      --data-storage-format=BONSAI
+      --engine-jwt-secret=/var/lib/jwtsecret/jwt.hex
+      --Xplugin-rocksdb-high-spec-enabled
+      --rpc-ws-enabled
+      --rpc-ws-host=0.0.0.0
+      --rpc-ws-port=8546
+      --rpc-http-enabled=true
+      --metrics-enabled=true
+    volumes:
+      - ${DATA_FOLDER:-./data}/.besu:/var/lib/besu
+      - ./data:/tmp/ethereum
+
+#   _____                                         
+#  / ____|                                        
+# | |     ___  _ __  ___  ___ _ __  ___ _   _ ___ 
+# | |    / _ \| '_ \/ __|/ _ \ '_ \/ __| | | / __|
+# | |___| (_) | | | \__ \  __/ | | \__ \ |_| \__ \
+#  \_____\___/|_| |_|___/\___|_| |_|___/\__,_|___/
+#
+
+
+  teku:
+    image: consensys/teku:${TEKU_VERSION:-}
+    restart: unless-stopped
+    init: true
+    networks: [ cluster ]
+    user: ${UID}:${GID}
+    ports:
+      - "127.0.0.1:8008:8008" # Prometheus metrics
+      - "127.0.0.1:5052:5052" # Rest port
+      - "9000:9000" # P2P port
+    environment:
+      - JAVA_OPTS=-Xmx6g
+      - TEKU_OPTS=-XX:-HeapDumpOnOutOfMemoryError
+    command: >-
+      --network=${NETWORK:-}
+      --data-path=/var/lib/teku_beacon
+      --ee-endpoint=http://${EL_CLIENT:-nethermind}:8551
+      --ee-jwt-secret-file=/var/lib/jwtsecret/jwt.hex
+      --initial-state=${CHECKPOINT_SYNC_URL}
+      --metrics-enabled=true
+      --rest-api-enabled=true
+      --rest-api-interface=0.0.0.0
+      --rest-api-port=5052
+      --builder-endpoint=http://127.0.0.1:18550
+      --validators-builder-registration-default-enabled=true
+      --p2p-nat-method=UPNP 
+    volumes:
+      - ${DATA_FOLDER:-./data}/.teku:/opt/teku/.local/share/teku/
+      - ./data:/tmp/ethereum
+  
+  nimbus-trusted-sync:
+    image: statusim/nimbus-eth2:${NIMBUS_TAG:-latest}
+    restart: unless-stopped
+    init: true
+    user: ${UID}:${GID}
+    networks: [ cluster ]
+    command: >-
+      --network=${NETWORK}
+      trustedNodeSync
+      --trusted-node-url="${CHECKPOINT_SYNC_URL:-}"
+      --data-dir=/var/lib/nimbus_beacon
+    volumes:
+      - ${DATA_FOLDER:-./data}/.nimbus:/var/lib/nimbus_beacon
+      - ./data:/tmp/ethereum
+
+  nimbus:
+    image: statusim/nimbus-eth2:${NIMBUS_VERSION:-}
+    restart: unless-stopped
+    init: true
+    user: ${UID}:${GID}
+    networks: [ cluster ]
+    ports:
+      - "127.0.0.1:8008:8008" # Prometheus metrics
+      - "127.0.0.1:5052:5052" # Rest Port
+      - "9000:9000" # P2P port
+    command: >-
+      --network=${NETWORK:-}
+      --data-dir=/var/lib/nimbus_beacon
+      --web3-url=http://${EL_CLIENT:-nethermind}:8551
+      --jwt-secret=/var/lib/jwtsecret/jwt.hex
+      --payload-builder=true
+      --payload-builder-url=http://127.0.0.1:18550
+      --rest
+      --rest-address=0.0.0.0
+      --rest-port=5052
+      --metrics
+      --metrics-port=8008 
+    volumes:
+      - ${DATA_FOLDER:-./data}/.nimbus:/var/lib/nimbus_beacon
+      - ./data:/tmp/ethereum
+  
+  lodestar:
+    image: chainsafe/lodestar:${LODESTAR_VERSION:-}
+    restart: unless-stopped
+    init: true
+    networks: [ cluster ]
+    ports:
+      - "127.0.0.1:8008:8008" # Prometheus metrics
+      - "127.0.0.1:9596:9596" # Rest port
+      - "9000:9000" # P2P port
+    command: >-
+      beacon
+      --network=${NETWORK:-}
+      --checkpointSyncUrl=${CHECKPOINT_SYNC_URL:-}
+      --execution.urls="http://nethermind-lodestar:8551"
+      --network.connectToDiscv5Bootnodes
+      --suggestedFeeRecipient=${FEE_RECIPIENT:-}
+      --jwt-secret="/tmp/ethereum/jwtsecret"
+      --logFile=/root/.local/share/lodestar/lodestar.log
+      --metrics=true
+      --metrics.address=0.0.0.0
+      --rest.address=0.0.0.0
+      --port=9004
+      --listenAddress=0.0.0.0
+    volumes:
+      - ${DATA_FOLDER:-./data}/.lodestar:/root/.local/share/lodestar
+      - ./data:/tmp/ethereum
+  
+  mev-boost:
+    image: flashbots/mev-boost:${MEV_BOOST_VERSION:-}
+    restart: unless-stopped
+    init: true
+    networks: [ cluster ]
+    ports:
+      - "127.0.0.1:8008:8008" # Prometheus metrics
+      - "127.0.0.1:9596:9596" # Rest port
+      - "9000:9000" # P2P port
+    command: >-
+      -${NETWORK:-}
+      -min-bid 0.05
+      -relay-check
+      -relay ${RELAY1:-}
+      -relay ${RELAY2:-}
+      -relay ${RELAY3:-}
+      -relay ${RELAY4:-}
+    volumes:
+      - ${DATA_FOLDER:-./data}/.mev-boost:/root/.local/share/lodestar
+      - ./data:/tmp/ethereum
