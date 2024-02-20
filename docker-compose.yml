@@ -28,18 +28,21 @@ services:
       --Sync.SnapSync=true 
       --JsonRpc.Enabled=true 
       --JsonRpc.Host=0.0.0.0 
-      --JsonRpc.Port=8545 
+      --JsonRpc.Port=8545
+      --JsonRpc.EnginePort=8551
+      --JsonRpc.EngineHost=0.0.0.0
       --HealthChecks.Enabled=true 
       --Metrics.Enabled=true 
       --Metrics.PushGatewayUrl=http://localhost:9091/metrics
     volumes:
       - ${DATA_FOLDER:-./data}/.nethermind:/var/lib/nethermind
-      - ./data:/tmp/ethereum
+      - ./data/jwt:/var/lib/jwtsecret
 
   besu:
     image: hyperledger/besu:${BESU_VERSION:-}
     restart: unless-stopped
     init: true
+    user: "${UID}:${GID}"
     networks: [ cluster ]
     ports:
       - "127.0.0.1:8545:8545"    # JSON-RPC port
@@ -60,7 +63,7 @@ services:
       --metrics-enabled=true
     volumes:
       - ${DATA_FOLDER:-./data}/.besu:/var/lib/besu
-      - ./data:/tmp/ethereum
+      - ./data/jwt:/var/lib/jwtsecret
 
 #   _____                                         
 #  / ____|                                        
@@ -76,7 +79,7 @@ services:
     restart: unless-stopped
     init: true
     networks: [ cluster ]
-    user: ${UID:-}:${GID:-}
+    user: "${UID}:${GID}"
     ports:
       - "127.0.0.1:8008:8008" # Prometheus metrics
       - "127.0.0.1:5051:5051" # Rest port
@@ -97,14 +100,14 @@ services:
       --validators-builder-registration-default-enabled=true
       --p2p-nat-method=UPNP 
     volumes:
-      - ${DATA_FOLDER:-./data}/.teku:/opt/teku/.local/share/teku/
-      - ./data:/tmp/ethereum
+      - ${DATA_FOLDER:-./data}/.teku:/var/lib/teku_beacon
+      - ./data/jwt:/var/lib/jwtsecret
   
   nimbus-trusted-sync:
-    image: statusim/nimbus-eth2:${NIMBUS_TAG:-latest}
+    image: statusim/nimbus-eth2:${NIMBUS_VERSION:-}
     restart: unless-stopped
     init: true
-    user: ${UID:-}:${GID:-}
+    user: "${UID}:${GID}"
     networks: [ cluster ]
     command: >-
       --network=${NETWORK:-}
@@ -113,13 +116,13 @@ services:
       --data-dir=/var/lib/nimbus_beacon
     volumes:
       - ${DATA_FOLDER:-./data}/.nimbus:/var/lib/nimbus_beacon
-      - ./data:/tmp/ethereum
+      - ./data/jwt:/var/lib/jwtsecret
 
   nimbus:
     image: statusim/nimbus-eth2:${NIMBUS_VERSION:-}
     restart: unless-stopped
     init: true
-    user: ${UID:-}:${GID:-}
+    user: "${UID}:${GID}"
     networks: [ cluster ]
     ports:
       - "127.0.0.1:8008:8008" # Prometheus metrics
@@ -139,7 +142,7 @@ services:
       --metrics-port=8008 
     volumes:
       - ${DATA_FOLDER:-./data}/.nimbus:/var/lib/nimbus_beacon
-      - ./data:/tmp/ethereum
+      - ./data/jwt:/var/lib/jwtsecret
   
   lodestar:
     image: chainsafe/lodestar:${LODESTAR_VERSION:-}
@@ -153,13 +156,14 @@ services:
     command: >-
       beacon
       --network=${NETWORK:-}
+      --dataDir=/var/lib/lodestar_beacon
       --checkpointSyncUrl=${CHECKPOINT_SYNC_URL:-}
-      --execution.urls="http://nethermind-lodestar:8551"
+      --execution.urls="http://${EL_CLIENT:-nethermind}:8551"
       --builder
       --builder.urls=http://mev-boost:18550
       --network.connectToDiscv5Bootnodes
       --suggestedFeeRecipient=${FEE_RECIPIENT:-}
-      --jwt-secret="/tmp/ethereum/jwtsecret"
+      --jwt-secret="/var/lib/jwtsecret/jwt.hex"
       --logFile=/root/.local/share/lodestar/lodestar.log
       --metrics=true
       --metrics.address=0.0.0.0
@@ -167,8 +171,8 @@ services:
       --port=9004
       --listenAddress=0.0.0.0
     volumes:
-      - ${DATA_FOLDER:-./data}/.lodestar:/root/.local/share/lodestar
-      - ./data:/tmp/ethereum
+      - ${DATA_FOLDER:-./data}/.lodestar:/var/lib/lodestar_beacon
+      - ./data/jwt:/var/lib/jwtsecret
   
   mev-boost:
     image: flashbots/mev-boost:${MEV_BOOST_VERSION:-}
@@ -177,15 +181,14 @@ services:
     networks: [ cluster ]
     command: >-
       -${NETWORK:-}
+      -addr="0.0.0.0:18550"
       -min-bid 0.05
       -relay-check
       -relay ${RELAY1:-}
       -relay ${RELAY2:-}
       -relay ${RELAY3:-}
-      -relay ${RELAY4:-}
     volumes:
       - ${DATA_FOLDER:-./data}/.mev-boost:/root/.local/share/lodestar
-      - ./data:/tmp/ethereum
 
 networks:
   cluster:
