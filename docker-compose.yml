@@ -15,10 +15,14 @@ services:
     restart: unless-stopped
     init: true
     networks: [ cluster ]
+    ports:
+      - "127.0.0.1:8545:8545"    # JSON-RPC port
+      - "127.0.0.1:8645:8645"    # Prometheus metrics port
+      - "30303:30303"  # P2P port 
     environment:
       - DOTNET_BUNDLE_EXTRACT_BASE_DIR=/var/lib/nethermind
     command: >-
-      --config=${NETWORK} 
+      --config=${NETWORK:-} 
       --datadir=/var/lib/nethermind 
       --JsonRpc.JwtSecretFile=/var/lib/jwtsecret/jwt.hex 
       --Sync.SnapSync=true 
@@ -37,10 +41,14 @@ services:
     restart: unless-stopped
     init: true
     networks: [ cluster ]
+    ports:
+      - "127.0.0.1:8545:8545"    # JSON-RPC port
+      - "127.0.0.1:9545:9545"    # Prometheus metrics port
+      - "30303:30303"  # P2P port 
     environment:
       - JAVA_OPTS=-Xmx6g
     command: >-
-      --network=holesky
+      --network=${NETWORK:-}
       --sync-mode=X_SNAP
       --data-path=/var/lib/besu
       --data-storage-format=BONSAI
@@ -48,7 +56,6 @@ services:
       --Xplugin-rocksdb-high-spec-enabled
       --rpc-ws-enabled
       --rpc-ws-host=0.0.0.0
-      --rpc-ws-port=8546
       --rpc-http-enabled=true
       --metrics-enabled=true
     volumes:
@@ -69,10 +76,10 @@ services:
     restart: unless-stopped
     init: true
     networks: [ cluster ]
-    user: ${UID}:${GID}
+    user: ${UID:-}:${GID:-}
     ports:
       - "127.0.0.1:8008:8008" # Prometheus metrics
-      - "127.0.0.1:5052:5052" # Rest port
+      - "127.0.0.1:5051:5051" # Rest port
       - "9000:9000" # P2P port
     environment:
       - JAVA_OPTS=-Xmx6g
@@ -82,12 +89,11 @@ services:
       --data-path=/var/lib/teku_beacon
       --ee-endpoint=http://${EL_CLIENT:-nethermind}:8551
       --ee-jwt-secret-file=/var/lib/jwtsecret/jwt.hex
-      --initial-state=${CHECKPOINT_SYNC_URL}
+      --initial-state=${CHECKPOINT_SYNC_URL:-}
       --metrics-enabled=true
       --rest-api-enabled=true
       --rest-api-interface=0.0.0.0
-      --rest-api-port=5052
-      --builder-endpoint=http://127.0.0.1:18550
+      --builder-endpoint=http://mev-boost:18550
       --validators-builder-registration-default-enabled=true
       --p2p-nat-method=UPNP 
     volumes:
@@ -98,10 +104,10 @@ services:
     image: statusim/nimbus-eth2:${NIMBUS_TAG:-latest}
     restart: unless-stopped
     init: true
-    user: ${UID}:${GID}
+    user: ${UID:-}:${GID:-}
     networks: [ cluster ]
     command: >-
-      --network=${NETWORK}
+      --network=${NETWORK:-}
       trustedNodeSync
       --trusted-node-url="${CHECKPOINT_SYNC_URL:-}"
       --data-dir=/var/lib/nimbus_beacon
@@ -113,7 +119,7 @@ services:
     image: statusim/nimbus-eth2:${NIMBUS_VERSION:-}
     restart: unless-stopped
     init: true
-    user: ${UID}:${GID}
+    user: ${UID:-}:${GID:-}
     networks: [ cluster ]
     ports:
       - "127.0.0.1:8008:8008" # Prometheus metrics
@@ -125,7 +131,7 @@ services:
       --web3-url=http://${EL_CLIENT:-nethermind}:8551
       --jwt-secret=/var/lib/jwtsecret/jwt.hex
       --payload-builder=true
-      --payload-builder-url=http://127.0.0.1:18550
+      --payload-builder-url=http://mev-boost:18550
       --rest
       --rest-address=0.0.0.0
       --rest-port=5052
@@ -143,12 +149,14 @@ services:
     ports:
       - "127.0.0.1:8008:8008" # Prometheus metrics
       - "127.0.0.1:9596:9596" # Rest port
-      - "9000:9000" # P2P port
+      - "9004:9004" # P2P port
     command: >-
       beacon
       --network=${NETWORK:-}
       --checkpointSyncUrl=${CHECKPOINT_SYNC_URL:-}
       --execution.urls="http://nethermind-lodestar:8551"
+      --builder
+      --builder.urls=http://mev-boost:18550
       --network.connectToDiscv5Bootnodes
       --suggestedFeeRecipient=${FEE_RECIPIENT:-}
       --jwt-secret="/tmp/ethereum/jwtsecret"
@@ -167,10 +175,6 @@ services:
     restart: unless-stopped
     init: true
     networks: [ cluster ]
-    ports:
-      - "127.0.0.1:8008:8008" # Prometheus metrics
-      - "127.0.0.1:9596:9596" # Rest port
-      - "9000:9000" # P2P port
     command: >-
       -${NETWORK:-}
       -min-bid 0.05
@@ -182,3 +186,6 @@ services:
     volumes:
       - ${DATA_FOLDER:-./data}/.mev-boost:/root/.local/share/lodestar
       - ./data:/tmp/ethereum
+
+networks:
+  cluster:
