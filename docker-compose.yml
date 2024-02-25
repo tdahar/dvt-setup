@@ -190,5 +190,62 @@ services:
     volumes:
       - ${DATA_FOLDER:-./data}/.mev-boost:/root/.local/share/lodestar
 
+#   __  __             _ _             _             
+#  |  \/  |           (_) |           (_)            
+#  | \  / | ___  _ __  _| |_ ___  _ __ _ _ __   __ _ 
+#  | |\/| |/ _ \| '_ \| | __/ _ \| '__| | '_ \ / _` |
+#  | |  | | (_) | | | | | || (_) | |  | | | | | (_| |
+#  |_|  |_|\___/|_| |_|_|\__\___/|_|  |_|_| |_|\__, |
+#                                               __/ |
+#                                              |___/ 
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    network_mode: host
+    command: >-
+      --path.rootfs=/host
+      --web.listen-address=localhost:9100
+
+    pid: host
+    restart: unless-stopped
+    volumes:
+      - '/:/host:ro,rslave'
+  
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    networks: [ cluster ]
+    ports:
+      - "127.0.0.1:8090:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:rw
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+  
+  prometheus:
+    image: prom/prometheus:latest
+    init: true
+    user: "${UID}:${GID}"
+    volumes:
+      - ./prometheus/:/etc/prometheus/
+      - ./apps-data/.prometheus:/prometheus/data
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--web.listen-address=${PROMETHEUS_ADDRESS:-localhost:9090}'
+      - '--storage.tsdb.retention.time=1y'
+      - '--web.enable-remote-write-receiver'
+    network_mode: 'host'
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:10.1.0-ubuntu
+    init: true
+    network_mode: 'host'
+    volumes:
+      - ./apps-data/grafana:/var/lib/grafana
+      - ./grafana/grafana.ini:/etc/grafana/grafana.ini
+
 networks:
   cluster:
