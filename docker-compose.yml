@@ -242,6 +242,7 @@ services:
   grafana:
     image: grafana/grafana:10.1.0-ubuntu
     init: true
+    user: "${UID}:${GID}"
     network_mode: 'host'
     volumes:
       - ./apps-data/grafana:/var/lib/grafana
