@@ -103,6 +103,32 @@ services:
       - ${DATA_FOLDER:-./data}/.teku:/var/lib/teku_beacon
       - ./data/jwt:/var/lib/jwtsecret
   
+  teku-val:
+    image: consensys/teku:${TEKU_VERSION:-}
+    restart: unless-stopped
+    init: true
+    networks: [ cluster ]
+    user: "${UID}:${GID}"
+    ports:
+      - "127.0.0.1:8009:8008" # Prometheus metrics
+    environment:
+      - JAVA_OPTS=-Xmx6g
+      - TEKU_OPTS=-XX:-HeapDumpOnOutOfMemoryError
+    command: >-
+      vc
+      --network=${NETWORK:-}
+      --data-path=/var/lib/teku_validator
+      --validator-keys="/var/lib/teku_validator/validator_keystores:/var/lib/teku_validator/keystore_password"
+      --beacon-node-api-endpoint=http://teku:5051
+      --validators-proposer-default-fee-recipient=${FEE_RECIPIENT}
+      --validators-proposer-blinded-blocks-enabled=true
+      --validators-graffiti=${GRAFFITI:-}
+      --metrics-enabled=true
+      --metrics-port=8008
+      --doppelganger-detection-enabled=true
+    volumes:
+      - ${DATA_FOLDER:-./data}/.teku_val:/var/lib/teku_validator
+  
   nimbus-trusted-sync:
     image: statusim/nimbus-eth2:${NIMBUS_VERSION:-}
     restart: unless-stopped
